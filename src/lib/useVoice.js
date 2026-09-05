@@ -140,6 +140,17 @@ export function useVoice() {
       }
 
       recognitionRef.current = null;
+
+      // BUG FIX: cancel any in-flight speech synthesis on
+      // unmount so the browser doesn't keep talking (or hold
+      // a dangling utterance) after this component is gone.
+      if ("speechSynthesis" in window) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch {
+          // Ignore - nothing to cancel.
+        }
+      }
     };
   }, []);
 
@@ -202,46 +213,98 @@ export function useVoice() {
 
   // --------------------------------------------------
   // Text-to-speech
+  //
+  // BUG FIX: speak() now returns a Promise that resolves
+  // only when the utterance has ACTUALLY finished playing
+  // (onend), so callers can await real TTS completion
+  // instead of guessing with a fixed timer. If synthesis
+  // is unavailable or errors out, the promise still
+  // resolves (rather than hanging forever) so a caller
+  // awaiting it can move on gracefully - the error state
+  // is still surfaced via `error` for the UI.
   // --------------------------------------------------
 
   const speak = useCallback((text) => {
-    if (!text || !text.trim()) return;
-
-    if (!("speechSynthesis" in window)) {
-      setError(
-        "Text-to-speech is not supported in this browser."
-      );
-      return;
-    }
-
-    window.speechSynthesis.cancel();
-
-    const utterance =
-      new SpeechSynthesisUtterance(text);
-
-    utterance.lang = "en-IN";
-    utterance.rate = 0.95;
-    utterance.pitch = 1.05;
-    utterance.volume = 1;
-
-    utterance.onstart = () => {
-      if (mountedRef.current) {
-        setError("");
+    return new Promise((resolve) => {
+      if (!text || !text.trim()) {
+        resolve({ ok: false, reason: "empty-text" });
+        return;
       }
-    };
 
-    utterance.onerror = (event) => {
-      if (!mountedRef.current) return;
+      if (!("speechSynthesis" in window)) {
+        setError(
+          "Text-to-speech is not supported in this browser."
+        );
+        resolve({ ok: false, reason: "unsupported" });
+        return;
+      }
 
-      console.error(
-        "Speech synthesis error:",
-        event.error
-      );
+      window.speechSynthesis.cancel();
 
-      setError("Unable to play the voice response.");
-    };
+      const utterance =
+        new SpeechSynthesisUtterance(text);
 
-    window.speechSynthesis.speak(utterance);
+      utterance.lang = "en-IN";
+      utterance.rate = 0.95;
+      utterance.pitch = 1.05;
+      utterance.volume = 1;
+
+      let settled = false;
+
+      const settle = (result) => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
+
+      utterance.onstart = () => {
+        if (mountedRef.current) {
+          setError("");
+        }
+      };
+
+      utterance.onend = () => {
+        settle({ ok: true });
+      };
+
+      utterance.onerror = (event) => {
+        // "interrupted"/"canceled" happen when we (or a new
+        // speak() call) intentionally cancel this utterance -
+        // that's not a real failure, so don't surface it as one.
+        const benign =
+          event.error === "interrupted" ||
+          event.error === "canceled";
+
+        if (!benign && mountedRef.current) {
+          console.error(
+            "Speech synthesis error:",
+            event.error
+          );
+
+          setError("Unable to play the voice response.");
+        }
+
+        settle({
+          ok: benign,
+          reason: event.error,
+        });
+      };
+
+      try {
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        console.error(
+          "Speech synthesis failed to start:",
+          err
+        );
+
+        if (mountedRef.current) {
+          setError("Unable to play the voice response.");
+        }
+
+        settle({ ok: false, reason: "start-failed" });
+      }
+    });
   }, []);
 
   // --------------------------------------------------
@@ -272,4 +335,3 @@ export function useVoice() {
     stopSpeaking,
   };
 }
-

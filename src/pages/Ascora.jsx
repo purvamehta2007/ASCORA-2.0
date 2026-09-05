@@ -42,6 +42,14 @@ export default function Ascora({ student = null }) {
   const [raisingHand, setRaisingHand] = useState(false);
   const [resolving, setResolving] = useState(false);
 
+  // BUG FIX: myRequest goes back to null as soon as loadQueue()
+  // refreshes after a resolve (the resolved row is no longer in
+  // the active waiting/serving set), which used to make the
+  // "Doubt Resolved" UI disappear instantly. lastResolved tracks
+  // that moment independently of myRequest so the confirmation
+  // stays visible for a short delay before returning to idle.
+  const [lastResolved, setLastResolved] = useState(false);
+
   const classroomId = "main-classroom";
   const studentId = student?.id;
 
@@ -329,6 +337,7 @@ export default function Ascora({ student = null }) {
     if (myRequest?.status === "serving") {
       setState("serving");
       setAnswer("");
+      setLastResolved(false);
       clearTranscriptRef.current();
 
       // BUG FIX: reset the "already answered" tracker
@@ -399,44 +408,89 @@ export default function Ascora({ student = null }) {
 
     setState("thinking");
 
-    const topic =
-      data?.topic ||
-      "your current topic";
+    // BUG FIX: the adaptive answer now comes from the backend
+    // (which adapts to mastery/pace/etc via the AI provider
+    // abstraction) instead of a hardcoded template, and ASCORA
+    // no longer resolves on a fixed timer - it waits for the
+    // actual answer, then the actual end of TTS playback.
+    let cancelled = false;
 
-    const pace =
-      data?.strategy?.pace ||
-      "adaptive";
+    async function thinkSpeakAndResolve() {
+      let generatedAnswer = null;
 
-    /*
-     * TEMPORARY DEMO ANSWER
-     *
-     * Later this will be replaced with the
-     * actual AI/adaptive-learning backend.
-     */
+      try {
+        const response = await apiFetch(
+          "/api/ascora/answer",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              doubt,
+              student_context: {
+                topic: data?.topic,
+                mastery: data?.mastery,
+                pace: data?.strategy?.pace,
+                visual: data?.strategy?.visual,
+                guided_questions:
+                  data?.strategy?.guided_questions,
+              },
+            }),
+          }
+        );
 
-    const generatedAnswer =
-      `I heard your doubt: ${doubt}. ` +
-      `Since we are working on ${topic}, ` +
-      `I will explain it step by step using a ` +
-      `${pace} approach.`;
+        generatedAnswer = response?.answer;
+      } catch (error) {
+        console.error(
+          "ASCORA answer error:",
+          error
+        );
+      }
 
-    setAnswer(generatedAnswer);
+      if (cancelled || !isMountedRef.current) return;
 
-    const timer = setTimeout(() => {
+      if (!generatedAnswer) {
+        // BUG FIX: if the AI backend is unreachable, don't
+        // silently lose the student's request - fall back to
+        // a short, honest message and still complete the loop.
+        generatedAnswer =
+          "I'm having trouble reaching my thinking engine " +
+          "right now, but I've noted your doubt. Please ask " +
+          "your teacher, or try again in a moment.";
+      }
+
+      setAnswer(generatedAnswer);
       setState("answering");
 
-      speakRef.current(generatedAnswer);
-    }, 1000);
+      try {
+        await speakRef.current(generatedAnswer);
+      } catch (error) {
+        // BUG FIX: speak() itself is designed not to throw
+        // (see useVoice.js), but guard anyway so a resolve
+        // still happens even if TTS misbehaves.
+        console.error(
+          "ASCORA speak error:",
+          error
+        );
+      }
+
+      if (cancelled || !isMountedRef.current) return;
+
+      resolveCurrentDoubtRef.current();
+    }
+
+    thinkSpeakAndResolve();
 
     return () => {
-      clearTimeout(timer);
+      cancelled = true;
     };
   }, [
     transcript,
     listening,
     myRequest?.status,
     data?.topic,
+    data?.mastery,
     data?.strategy?.pace,
+    data?.strategy?.visual,
+    data?.strategy?.guided_questions,
   ]);
 
   // ==================================================
@@ -486,6 +540,11 @@ export default function Ascora({ student = null }) {
 
       setState("resolved");
 
+      // BUG FIX: set this BEFORE loadQueue() runs, so the
+      // "Doubt Resolved" confirmation keeps rendering even once
+      // loadQueue() clears myRequest to null.
+      setLastResolved(true);
+
       /*
        * Clear the current student's local
        * voice state.
@@ -505,12 +564,13 @@ export default function Ascora({ student = null }) {
 
       /*
        * Small delay so the RESOLVED state
-       * is visible during the demo.
+       * stays visible before returning to idle.
        */
 
       setTimeout(() => {
         if (isMountedRef.current) {
           setState("idle");
+          setLastResolved(false);
         }
       }, 1500);
     } catch (error) {
@@ -540,29 +600,6 @@ export default function Ascora({ student = null }) {
 
   const resolveCurrentDoubtRef = useRef(resolveCurrentDoubt);
   resolveCurrentDoubtRef.current = resolveCurrentDoubt;
-
-  // ==================================================
-  // AUTOMATIC RESOLUTION AFTER ANSWER
-  // ==================================================
-
-  useEffect(() => {
-    if (!answer) return;
-
-    if (state !== "answering") return;
-
-    /*
-     * Give the browser time to play the
-     * spoken response before resolving.
-     */
-
-    const timer = setTimeout(() => {
-      resolveCurrentDoubtRef.current();
-    }, 6000);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [state, answer, myRequest?.id]);
 
   // ==================================================
   // RAISE HAND
@@ -639,6 +676,7 @@ export default function Ascora({ student = null }) {
       );
 
       setMyRequest(newRequest);
+      setLastResolved(false);
 
       await loadQueue();
     } catch (error) {
@@ -647,7 +685,19 @@ export default function Ascora({ student = null }) {
         error
       );
 
-      if (isMountedRef.current) {
+      // BUG FIX: a duplicate active request (partial unique
+      // index on doubt_queue) means someone/something already
+      // raised this student's hand - recover gracefully by
+      // reloading the queue instead of leaving them stuck.
+      const isDuplicate =
+        error?.code === "23505" ||
+        /duplicate|already/i.test(
+          error?.message || ""
+        );
+
+      if (isDuplicate) {
+        await loadQueue();
+      } else if (isMountedRef.current) {
         alert(
           "Unable to raise your hand. Please try again."
         );
@@ -687,6 +737,7 @@ export default function Ascora({ student = null }) {
 
       setMyRequest(null);
       setAnswer("");
+      setLastResolved(false);
       clearTranscriptRef.current();
       processedTranscriptRef.current = "";
       setState("idle");
@@ -940,7 +991,31 @@ export default function Ascora({ student = null }) {
             NO ACTIVE REQUEST
         ---------------------------------------------- */}
 
-        {!myRequest && (
+        {/* BUG FIX: this no longer depends on myRequest staying
+            truthy - lastResolved keeps the confirmation visible
+            for a short delay even after loadQueue() has already
+            cleared myRequest to null. */}
+
+        {!myRequest && lastResolved && (
+          <div
+            className="item"
+            style={{
+              marginTop: 20,
+              textAlign: "center",
+            }}
+          >
+            <strong>
+              ✅ Doubt Resolved
+            </strong>
+
+            <p className="muted">
+              ASCORA has answered your doubt.
+              The next student can now be served.
+            </p>
+          </div>
+        )}
+
+        {!myRequest && !lastResolved && (
           <div
             style={{
               marginTop: 20,

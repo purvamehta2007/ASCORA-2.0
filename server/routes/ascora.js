@@ -1,8 +1,46 @@
 import { Router } from "express";
 import { supabaseAdmin } from "../lib/supabaseAdmin.js";
 import { generateStrategy } from "../services/adaptiveEngine.js";
+import { generateAdaptiveAnswer } from "../services/adaptiveAnswer.js";
 
 export const ascoraRouter = Router();
+
+// --------------------------------------------------
+// ANSWER A STUDENT DOUBT
+//
+// Body: { doubt: string, student_context: { topic, mastery,
+// pace, visual, guided_questions, errors? } }
+//
+// This is the abstraction the frontend calls instead of
+// hardcoding a canned response. The actual explanation comes
+// from the provider-agnostic chat() adapter in aiProvider.js -
+// no API keys live here or in the frontend.
+// --------------------------------------------------
+
+ascoraRouter.post("/answer", async (req, res) => {
+  try {
+    const { doubt, student_context } = req.body || {};
+
+    if (!doubt || typeof doubt !== "string" || !doubt.trim()) {
+      return res.status(400).json({
+        error: "doubt is required",
+      });
+    }
+
+    const answer = await generateAdaptiveAnswer({
+      doubt: doubt.trim(),
+      student_context: student_context || {},
+    });
+
+    res.json({ answer });
+  } catch (error) {
+    console.error("ASCORA answer error:", error);
+
+    res.status(500).json({
+      error: "Unable to generate an answer right now.",
+    });
+  }
+});
 
 ascoraRouter.get(
   "/student/:id/context",

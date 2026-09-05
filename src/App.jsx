@@ -15,7 +15,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Classroom from "./pages/Classroom";
 import Assessment from "./pages/Assessment";
-import Test from "./pages/Test";
+import Test from "./pages/test";
 import Notebook from "./pages/Notebook";
 import Insights from "./pages/Insights";
 import Teacher from "./pages/Teacher";
