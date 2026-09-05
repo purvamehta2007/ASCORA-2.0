@@ -1,14 +1,31 @@
 import { createClient } from "@supabase/supabase-js";
 
-const url = process.env.SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseUrl = process.env.SUPABASE_URL;
+const serviceRoleKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl) {
+  console.error(
+    "❌ SUPABASE_URL is missing"
+  );
+}
+
+if (!serviceRoleKey) {
+  console.error(
+    "❌ SUPABASE_SERVICE_ROLE_KEY is missing"
+  );
+}
 
 export const supabaseAdmin =
-  url && serviceRoleKey
-    ? createClient(url, serviceRoleKey, {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      })
+  supabaseUrl && serviceRoleKey
+    ? createClient(
+        supabaseUrl,
+        serviceRoleKey,
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+          },
+        }
+      )
     : null;

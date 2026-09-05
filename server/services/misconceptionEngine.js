@@ -4,63 +4,125 @@ export function detectMisconception({
   correct = false,
   concept = "",
 }) {
+  // Correct answer = no misconception
   if (correct) {
     return null;
   }
 
-  const q = question.toLowerCase().trim();
-  const a = answer.toLowerCase().trim();
+  const q =
+    String(question)
+      .toLowerCase();
 
-  /*
-   * Linear equation example:
-   *
-   * x + 5 = 12
-   * Student: 17
-   *
-   * Likely misconception:
-   * adding instead of applying inverse operation.
-   */
+  const a =
+    String(answer)
+      .toLowerCase()
+      .trim();
+
+  const c =
+    String(concept)
+      .toLowerCase();
+
+  // ==========================================
+  // PHOTOSYNTHESIS
+  // ==========================================
 
   if (
-    concept === "inverse_operations" &&
-    q.includes("x + 5") &&
-    a === "17"
+    c.includes("photosynthesis")
   ) {
+    if (
+      a.includes("oxygen") &&
+      !a.includes("carbon")
+    ) {
+      return {
+        type:
+          "photosynthesis_gas_confusion",
+
+        severity:
+          "medium",
+
+        recommended_intervention:
+          "visual_process_diagram",
+
+        explanation:
+          "Student may be confusing the gas used during photosynthesis with the gas released.",
+      };
+    }
+
     return {
-      type: "incorrect_inverse_operation",
-      severity: "medium",
-      recommended_intervention: "balance_model",
+      type:
+        "photosynthesis_conceptual_error",
+
+      severity:
+        "medium",
+
+      recommended_intervention:
+        "visual_process_diagram",
+
       explanation:
-        "Student appears to add 5 instead of subtracting 5 from both sides.",
+        "Student requires a visual explanation of the photosynthesis process.",
     };
   }
 
-  /*
-   * Fraction example.
-   */
+  // ==========================================
+  // FRACTIONS
+  // ==========================================
 
   if (
-    concept === "equivalent_fractions" &&
-    a === "1/4"
+    c.includes("fraction")
   ) {
     return {
-      type: "fraction_equivalence_error",
-      severity: "medium",
-      recommended_intervention: "visual_fraction_model",
+      type:
+        "fraction_conceptual_error",
+
+      severity:
+        "medium",
+
+      recommended_intervention:
+        "visual_fraction_model",
+
       explanation:
-        "Student may be confusing numerator/denominator scaling.",
+        "Student may need a visual representation of fractions.",
     };
   }
 
-  /*
-   * Generic fallback.
-   */
+  // ==========================================
+  // EQUATIONS
+  // ==========================================
+
+  if (
+    c.includes("equation") ||
+    q.includes("solve for x")
+  ) {
+    return {
+      type:
+        "equation_solving_error",
+
+      severity:
+        "medium",
+
+      recommended_intervention:
+        "step_by_step_guidance",
+
+      explanation:
+        "Student may need guided steps for solving the equation.",
+    };
+  }
+
+  // ==========================================
+  // DEFAULT
+  // ==========================================
 
   return {
-    type: "conceptual_error",
-    severity: "low",
-    recommended_intervention: "worked_example",
+    type:
+      "conceptual_error",
+
+    severity:
+      "low",
+
+    recommended_intervention:
+      "worked_example",
+
     explanation:
-      "The response was incorrect and requires additional concept-level analysis.",
+      "Student answered incorrectly and should receive another explanation and a follow-up question.",
   };
 }

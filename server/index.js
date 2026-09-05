@@ -13,8 +13,10 @@ dotenv.config();
 const app = express();
 
 const PORT = process.env.PORT || 3001;
+
 const CLIENT_ORIGIN =
-  process.env.CLIENT_ORIGIN || "http://localhost:5173";
+  process.env.CLIENT_ORIGIN ||
+  "http://localhost:5173";
 
 // --------------------------------------------------
 // Middleware
@@ -23,6 +25,7 @@ const CLIENT_ORIGIN =
 app.use(
   cors({
     origin: CLIENT_ORIGIN,
+    credentials: true,
   })
 );
 
@@ -33,44 +36,37 @@ app.use(
 );
 
 // --------------------------------------------------
-// Health Check
+// Health
 // --------------------------------------------------
 
 app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
     service: "ascora-api",
-    port: PORT,
   });
 });
 
 // --------------------------------------------------
-// Supabase Configuration Debug
-// --------------------------------------------------
-// IMPORTANT:
-// This endpoint NEVER returns the actual secret.
-// It only tells us whether the environment variables
-// are being loaded by Node.
+// Supabase Debug
 // --------------------------------------------------
 
 app.get("/api/debug/supabase", (req, res) => {
   res.json({
-    supabaseUrlConfigured: Boolean(
-      process.env.SUPABASE_URL
-    ),
+    supabaseUrlConfigured:
+      Boolean(process.env.SUPABASE_URL),
 
-    serviceKeyConfigured: Boolean(
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    ),
+    serviceKeyConfigured:
+      Boolean(
+        process.env.SUPABASE_SERVICE_ROLE_KEY
+      ),
 
-    aiKeyConfigured: Boolean(
-      process.env.AI_API_KEY
-    ),
+    aiKeyConfigured:
+      Boolean(process.env.AI_API_KEY),
   });
 });
 
 // --------------------------------------------------
-// API Routes
+// Routes
 // --------------------------------------------------
 
 app.use(
@@ -99,7 +95,7 @@ app.use(
 );
 
 // --------------------------------------------------
-// 404 Handler
+// 404
 // --------------------------------------------------
 
 app.use((req, res) => {
@@ -110,7 +106,7 @@ app.use((req, res) => {
 });
 
 // --------------------------------------------------
-// Global Error Handler
+// Error Handler
 // --------------------------------------------------
 
 app.use((err, req, res, next) => {
@@ -118,15 +114,12 @@ app.use((err, req, res, next) => {
 
   res.status(500).json({
     error: "Internal server error",
-    message:
-      process.env.NODE_ENV === "development"
-        ? err.message
-        : undefined,
+    message: err.message,
   });
 });
 
 // --------------------------------------------------
-// Start Server
+// Start
 // --------------------------------------------------
 
 app.listen(PORT, () => {
@@ -134,10 +127,13 @@ app.listen(PORT, () => {
   console.log("====================================");
   console.log("       ASCORA API SERVER");
   console.log("====================================");
-  console.log(`Server: http://localhost:${PORT}`);
+  console.log(
+    `Server: http://localhost:${PORT}`
+  );
   console.log(
     `Frontend: ${CLIENT_ORIGIN}`
   );
+
   console.log(
     `Supabase URL: ${
       process.env.SUPABASE_URL
@@ -145,6 +141,7 @@ app.listen(PORT, () => {
         : "NOT CONFIGURED"
     }`
   );
+
   console.log(
     `Supabase Server Key: ${
       process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -152,13 +149,15 @@ app.listen(PORT, () => {
         : "NOT CONFIGURED"
     }`
   );
+
   console.log(
     `AI API Key: ${
       process.env.AI_API_KEY
         ? "configured"
-        : "not configured (fallback mode)"
+        : "not configured"
     }`
   );
+
   console.log("====================================");
   console.log("");
 });

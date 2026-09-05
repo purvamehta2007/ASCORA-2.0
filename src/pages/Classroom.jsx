@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api } from "../lib/api";
+import { apiFetch } from "../lib/api";
 import { useVoice } from "../lib/useVoice";
 
 export default function Classroom({ student }) {
@@ -26,12 +26,14 @@ export default function Classroom({ student }) {
   const [strategy] = useState("Visual + guided questions");
   const [thinking, setThinking] = useState(false);
 
+  // Keep the text box synchronized with voice transcription
   useEffect(() => {
     if (transcript) {
       setText(transcript);
     }
   }, [transcript]);
 
+  // Update ASCORA state while listening
   useEffect(() => {
     if (listening) {
       setState("listening");
@@ -43,7 +45,10 @@ export default function Classroom({ student }) {
 
     if (!userMessage || thinking) return;
 
+    // Clear input
     setText("");
+
+    // Add student's message to chat
     setMessages((messages) => [
       ...messages,
       {
@@ -56,10 +61,11 @@ export default function Classroom({ student }) {
     setState("thinking");
 
     try {
-      const response = await api("/api/ai/chat", {
+      // Send message to ASCORA backend
+      const response = await apiFetch("/api/ai/chat", {
         method: "POST",
         body: JSON.stringify({
-          student_id: student.id,
+          student_id: student?.id,
 
           message: userMessage,
 
@@ -74,15 +80,16 @@ export default function Classroom({ student }) {
 
             strategy,
 
-            language: student.language || "English",
+            language: student?.language || "English",
           },
         }),
       });
 
       const reply =
-        response.reply ||
+        response?.reply ||
         "Let's work through this step by step.";
 
+      // Add ASCORA response
       setMessages((messages) => [
         ...messages,
         {
@@ -91,12 +98,13 @@ export default function Classroom({ student }) {
         },
       ]);
 
+      // Speak response
       setState("speaking");
-
       speak(reply);
     } catch (error) {
-      console.error(error);
+      console.error("ASCORA AI error:", error);
 
+      // Keep classroom usable even if backend is unavailable
       const fallback =
         "Let's slow down and use a worked example. Imagine x + 5 = 12 as a balanced scale. If we remove 5 from one side, we remove 5 from the other side too. So x = 7.";
 
@@ -109,7 +117,6 @@ export default function Classroom({ student }) {
       ]);
 
       setState("speaking");
-
       speak(fallback);
     } finally {
       setThinking(false);
@@ -192,6 +199,7 @@ export default function Classroom({ student }) {
             onClick={() => {
               const demo =
                 "Let's solve x plus 5 equals 12 step by step.";
+
               setMessages((messages) => [
                 ...messages,
                 {
@@ -199,6 +207,7 @@ export default function Classroom({ student }) {
                   text: demo,
                 },
               ]);
+
               setState("speaking");
               speak(demo);
             }}
@@ -291,3 +300,4 @@ export default function Classroom({ student }) {
     </div>
   );
 }
+
